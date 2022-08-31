@@ -1,9 +1,13 @@
+para iniciar o projeto py
+####py -3 -m venv venv
+
 iniciar o venv para rodar flask e
 instalar os modulos necessarios
 
 ### venv\Scripts\activate
 
 ####instalações
+	pip install Flask==2.0.2
 	pip install psycopg2==2.9.3
 	pip install pandas==1.4.3
 

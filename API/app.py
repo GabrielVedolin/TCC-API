@@ -1,9 +1,10 @@
 import psycopg2
 import pandas as pd
 from flask import Flask, jsonify
+from flask_cors import CORS
 
 app = Flask(__name__)
-
+CORS(app)
 # config db
 host = 'ec2-50-19-255-190.compute-1.amazonaws.com'
 dbname = 'de67a2stf4tsc2'
@@ -250,5 +251,5 @@ def feed(user_id, user_tipo):
 
 
 
-
-app.run()
+if __name__ == '__main__':
+    app.run(host='127.0.0.2', port=5000)

@@ -10,6 +10,7 @@ instalar os modulos necessarios
 	pip install Flask==2.0.2
 	pip install psycopg2==2.9.3
 	pip install pandas==1.4.3
+	pip install -U flask-cors
 
 comando para rodar flask
 ### flask run

@@ -132,10 +132,13 @@ def recomendacao(user_id, user_tipo):
         # resp_questionario.columns = ["aluno_id","tipo","peso"]
         # print(resp_questionario)
 
-        query = 'select * from shae_db.conteudo'
+
+        # query = 'select * from shae_db.conteudo'
+        
+        query = 'select * from shae_db.v_obterConteudosComProfessores'
 
         dfConteudos = pd.read_sql(query, conn)
-        dfConteudos.columns = ["idConteudo", "descricao", "tipo", "ordem", "idTopico", "descricao_texto", "url"]
+        dfConteudos.columns = ["idConteudo", "descricao", "tipo", "ordem", "idTopico", "descricao_texto", "url","id_especialista","nome_especialista","user_tipo"]
         conteudosTexto = dfConteudos.where(dfConteudos.tipo == "texto").dropna(subset=["idConteudo"]).head(qtdTexto)
         conteudosTeste = dfConteudos.where(dfConteudos.tipo == "teste").dropna(subset=["idConteudo"]).head(qtdTeste)
         conteudosAudio = dfConteudos.where(dfConteudos.tipo == "audio").dropna(subset=["idConteudo"]).head(qtdAudio)

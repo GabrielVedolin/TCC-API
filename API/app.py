@@ -169,11 +169,17 @@ def feed(user_id, user_tipo):
         return jsonify(conteudosProf)
     else:
 
-        qt_conteudo_feed = 8
+    ############################### Motor de Adaptação - 1º Acesso - Questionário #######################
+    #####################################################################################################
+
+        qt_conteudo_feed = 20
+
+
 
         query_quest = 'select * from ( '
         query_quest += 'select qp.user_id_aprendiz,qp.tipo_alternativa,sum(qp.peso) as somaDosPesos '
         query_quest += 'from shae_db.questionario_pedagogico qp '
+        query_quest += 'where id in (1,15,16,17,18,19,20,21,22)'
         query_quest += 'group by user_id_aprendiz, tipo_alternativa '
         query_quest += ') as soma_resp_questionario where user_id_aprendiz = {0}'.format(user_id)
 
@@ -189,15 +195,14 @@ def feed(user_id, user_tipo):
 
         dfquest['prox_feed'] = dfquest['prox_feed'].astype(int)
 
+        ## Qtd de conteúdos por tipo
         qtdtexto = dfquest['prox_feed'][dfquest['tipo_alternativa'] == "texto"].iloc[0]
         qtdteste = dfquest['prox_feed'][dfquest['tipo_alternativa'] == "teste"].iloc[0]
         qtdaudio = dfquest['prox_feed'][dfquest['tipo_alternativa'] == "audio"].iloc[0]
         qtdvideo = dfquest['prox_feed'][dfquest['tipo_alternativa'] == "video"].iloc[0]
 
-        # print(qtdtexto)
 
-        #####################################################################################################
-        #####################################################################################################
+        ########################### Esquema de seleção de conteúdo no banco #################################
         #####################################################################################################
 
         query_conteudo_quest = 'select * from shae_db.conteudo'
@@ -206,49 +211,94 @@ def feed(user_id, user_tipo):
         dfConteudos.columns = ["idConteudo", "descricao", "tipo", "ordem", "idTopico", "descricao_texto", "url"]
 
         conteudosTexto = dfConteudos.where(dfConteudos.tipo == "texto").dropna(subset=["idConteudo"]).head(qtdtexto)
-        # conteudosTeste = dfConteudos.where(dfConteudos.tipo == "teste").dropna(subset=["idConteudo"]).head(qtdteste)
-        # conteudosAudio = dfConteudos.where(dfConteudos.tipo == "audio").dropna(subset=["idConteudo"]).head(qtdaudio)
+        conteudosTeste = dfConteudos.where(dfConteudos.tipo == "questionario").dropna(subset=["idConteudo"]).head(qtdteste)
+        conteudosAudio = dfConteudos.where(dfConteudos.tipo == "imagem").dropna(subset=["idConteudo"]).head(qtdaudio)
         conteudosVideo = dfConteudos.where(dfConteudos.tipo == "video").dropna(subset=["idConteudo"]).head(qtdvideo)
 
-        conteudosFiltrados = pd.concat([conteudosTexto, conteudosVideo])#,conteudosTeste,conteudosAudio])
+        ### JSON com a relação de contéudos
+        conteudosFiltrados = pd.concat([conteudosTexto, conteudosVideo, conteudosTeste, conteudosAudio])
+        conteudosFiltrados = conteudosFiltrados.sample(frac=1)
+
+
+        ################################ Base armazenada - com o último feed ################################
+        #####################################################################################################
 
         feed_disp = pd.DataFrame({'id_conteudos': conteudosFiltrados.idConteudo,
                                   'tipo': conteudosFiltrados.tipo})
 
-        feed_disp_arm = pd.DataFrame({'tipo': conteudosFiltrados['tipo'].unique(),
-                                    'qt_disp': conteudosFiltrados.groupby('tipo')['idConteudo'].count()})
+        feed_disp_arm = pd.DataFrame({'qt_disp': feed_disp.groupby(['tipo'])['tipo'].size()}).reset_index()
 
-        # feed_disp.set_index = ["tipo", "qt_disp"]
 
-        feed_disp_arm.reset_index(inplace=True, drop=True)
+
+        ################################ Base armazenada - com o Disponibilizado e o Consumo  ###############
+        #####################################################################################################
 
         feed_disp_consumido = pd.DataFrame({'id_conteudos': conteudosFiltrados.idConteudo,
-                                  'tipo': conteudosFiltrados.tipo,
-                                  'consumo' : (0,1,1,0)})
+                                            'tipo': conteudosFiltrados.tipo,
+                                            'consumo': (0, 1, 1, 0, 0, 1, 1, 0, 1, 1, 0, 0, 1, 0, 1, 0, 0)})
 
-        consumo = pd.DataFrame({
-                        'tipo': feed_disp_consumido['tipo'].unique(),
-                        'qt_consumo': feed_disp_consumido.groupby('tipo')['consumo'].sum()})
+        consumo = pd.DataFrame({'qt_consumo': feed_disp_consumido.groupby('tipo')['consumo'].sum()}).reset_index()
 
-        # consumo.set_index = ["tipo", "qt_consumo"]
-
-        consumo.reset_index(inplace=True, drop=True)
-        #
         merge_feed = pd.merge(feed_disp_arm, consumo, how="left", on='tipo')
 
-        merge_feed['tipo','']
+
+
+        ################################ Motor de Adaptação - do prox feed-inicial 1 ###############
+        #####################################################################################################
+
+        ## % De consumo
+        percent_consumo = (merge_feed['qt_consumo'].sum() / merge_feed['qt_disp'].sum())
+
+        merge_feed['Disp_vs_consumo'] = (merge_feed['qt_disp']*percent_consumo)
+
+        ## % De consumo real
+        merge_feed['consumo_real'] = (merge_feed['qt_consumo']/merge_feed['Disp_vs_consumo'])
+
+
+        ## Aplicando o consumo real ao que foi disponibilizado, gerando a próxima disponibilização
+        merge_feed['prox_feed'] = (merge_feed['qt_disp'] * merge_feed['consumo_real'])
+
+        ## Caso o consumo de algum dos tipos tenha sido zero, é atribuido o que falta para totalizar o próx fedd
+        merge_feed['prox_feed'].loc[merge_feed['prox_feed'] == 0] = (qt_conteudo_feed - merge_feed['prox_feed'].sum())
+
+
+
+        ################### Esquema de seleção de conteúdo no banco - prox feed - 1 #########################
+        #####################################################################################################
+
+        ## Selecionando conteúdos que não foram disponibilizados
+        conteudos_consumo = feed_disp_consumido['id_conteudos'].loc[feed_disp_consumido['consumo'] == 1]
+        conteudos_consumo_list = conteudos_consumo.values.tolist()
+
+        query_prox_conteudo = 'select * from shae_db.conteudo'
+        query_prox_conteudo += ' where id_Conteudo not in ({0})'.format(str(conteudos_consumo_list)[1:-1])
+
+        dfConteudos_prox = pd.read_sql(query_prox_conteudo, conn)
+        dfConteudos_prox.columns = ["idConteudo", "descricao", "tipo", "ordem", "idTopico", "descricao_texto", "url"]
+
+        qtdtexto_prox = (merge_feed['prox_feed'].loc[merge_feed['tipo'] == "texto"]).tolist()
+        qtdtexto_prox = int(float(str(qtdtexto_prox)[1:-1]))
+
+        qtdteste_prox = (merge_feed['prox_feed'].loc[merge_feed['tipo'] == "questionario"]).tolist()
+        qtdteste_prox = int(float(str(qtdteste_prox)[1:-1]))
+
+        qtdaudio_prox = (merge_feed['prox_feed'].loc[merge_feed['tipo'] == "imagem"]).tolist()
+        qtdaudio_prox = int(float(str(qtdaudio_prox)[1:-1]))
+
+        qtdvideo_prox = merge_feed['prox_feed'].loc[merge_feed['tipo'] == "video"].tolist()
+        qtdvideo_prox = int(float(str(qtdvideo_prox)[1:-1]))
+
+        conteudosTexto_prox = dfConteudos_prox.where(dfConteudos_prox.tipo == "texto").dropna(subset=["idConteudo"]).head(qtdtexto_prox)
+        conteudosTeste_prox = dfConteudos_prox.where(dfConteudos.tipo == "questionario").dropna(subset=["idConteudo"]).head(qtdteste_prox)
+        conteudosAudio_prox = dfConteudos_prox.where(dfConteudos.tipo == "imagem").dropna(subset=["idConteudo"]).head(qtdaudio_prox)
+        conteudosVideo_prox = dfConteudos_prox.where(dfConteudos_prox.tipo == "video").dropna(subset=["idConteudo"]).head(qtdvideo_prox)
 
         #
-        # concat_feed = pd.concat([feed_disp_arm, consumo]).sort_values(by='tipo')
-        # concat_feed = concat_feed[concat_feed['qt_disp'].notna()]
-
-    return merge_feed.to_json(orient="records", force_ascii=False)
+        conteudosFiltrados_prox = pd.concat([conteudosTexto_prox, conteudosVideo_prox, conteudosTeste_prox, conteudosAudio_prox])
+        conteudosFiltrados_prox = conteudosFiltrados_prox.sample(frac=1)
 
 
-
-
-
-
+    return conteudosFiltrados_prox.to_json(orient="records", force_ascii=False)
 
 
 app.run()

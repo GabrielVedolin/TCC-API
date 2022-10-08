@@ -15,15 +15,6 @@ ssl = 'require'
 # string conexao
 conn_string = 'host={0} user={1} dbname={2} password={3} sslmode={4}'.format(host, user, dbname, password, ssl)
 
-# #config db
-# host = 'localhost'
-# dbname = 'postgres'
-# user = 'postgres'
-# password = '1234'
-
-# #string conexao
-# conn_string = 'host={0} user={1} dbname={2} password={3}'.format(host, user, dbname, password)
-
 conn = psycopg2.connect(conn_string)
 
 
@@ -74,7 +65,7 @@ def recomendacao(user_id, user_tipo):
 
         ## Qtd de conteúdos por tipo
         qtdTexto = dfquest['prox_feed'][dfquest['tipo_alternativa'] == "texto"].iloc[0]
-        qtdTeste = dfquest['prox_feed'][dfquest['tipo_alternativa'] == "teste"].iloc[0]
+        qtdQuestionario = dfquest['prox_feed'][dfquest['tipo_alternativa'] == "teste"].iloc[0]
         qtdAudio = dfquest['prox_feed'][dfquest['tipo_alternativa'] == "audio"].iloc[0]
         qtdVideo = dfquest['prox_feed'][dfquest['tipo_alternativa'] == "video"].iloc[0]
 
@@ -83,31 +74,34 @@ def recomendacao(user_id, user_tipo):
         #####################################################################################################
 
         
-        query = 'select * from shae_db.v_obterConteudosComProfessores'
+        conteudosFiltrados = obterConteudoFiltradoFeed(qtdTexto,qtdQuestionario,qtdAudio,qtdVideo)
 
-        dfConteudos = pd.read_sql(query, conn)
-        dfConteudos.columns = ["idConteudo", "descricao", "tipo", "ordem", "idTopico", "descricao_texto", "url","id_especialista","nome_especialista","user_tipo"]
-        
-        conteudosTexto = dfConteudos.where(dfConteudos.tipo == "texto").dropna(subset=["idConteudo"]).head(qtdTexto)
-        conteudosTeste = dfConteudos.where(dfConteudos.tipo == "questionario").dropna(subset=["idConteudo"]).head(qtdTeste)
-        conteudosAudio = dfConteudos.where(dfConteudos.tipo == "imagem").dropna(subset=["idConteudo"]).head(qtdAudio)
-        conteudosVideo = dfConteudos.where(dfConteudos.tipo == "video").dropna(subset=["idConteudo"]).head(qtdVideo)
-
-        ### JSON com a relação de contéudos
-        conteudosFiltrados = pd.concat([conteudosTexto, conteudosVideo, conteudosTeste, conteudosAudio])
-        conteudosFiltrados = conteudosFiltrados.sample(frac=1)
-
-        print(conteudosFiltrados)
         for indice in conteudosFiltrados.index:
-            query = """INSERT INTO shae_db.ultimo_feed (id_feed, id_aprendiz, id_conteudo, consumido)
+            query_insert = """INSERT INTO shae_db.ultimo_feed (id_feed, id_aprendiz, id_conteudo, consumido)
                     VALUES({0}, {1}, {2}, false);""".format(1, user_id, conteudosFiltrados["idConteudo"][indice])
-            cursor.execute(query)
+            cursor.execute(query_insert)
             conn.commit()
 
+        conteudosFiltrados = obterConteudoFiltradoFeed(qtdTexto,qtdQuestionario,qtdAudio,qtdVideo)
         return conteudosFiltrados.to_json(orient="records", force_ascii=False)
 
             # .to_json(orient="records", force_ascii=False)
 
+
+def obterConteudoFiltradoFeed(qtdTexto,qtdQuestionario,qtdAudio,qtdVideo):
+    query = 'select * from shae_db.v_obterConteudosComProfessores'
+    dfConteudos = pd.read_sql(query, conn)
+    dfConteudos.columns = ["idConteudo", "descricao", "tipo", "ordem", "idTopico", "descricao_texto", "url","id_especialista","nome_especialista","user_tipo","id_feed"]
+    
+    conteudosTexto = dfConteudos.where(dfConteudos.tipo == "texto").dropna(subset=["idConteudo"]).head(qtdTexto)
+    conteudosTeste = dfConteudos.where(dfConteudos.tipo == "questionario").dropna(subset=["idConteudo"]).head(qtdQuestionario)
+    conteudosAudio = dfConteudos.where(dfConteudos.tipo == "imagem").dropna(subset=["idConteudo"]).head(qtdAudio)
+    conteudosVideo = dfConteudos.where(dfConteudos.tipo == "video").dropna(subset=["idConteudo"]).head(qtdVideo)
+
+    ### JSON com a relação de contéudos
+    conteudosFiltrados = pd.concat([conteudosTexto, conteudosVideo, conteudosTeste, conteudosAudio])
+    conteudosFiltrados = conteudosFiltrados.sample(frac=1)
+    return conteudosFiltrados
 
 @app.route('/obter_feed/<int:user_id>/<int:user_tipo>')
 def feed(user_id, user_tipo):

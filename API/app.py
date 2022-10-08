@@ -2,11 +2,11 @@ import psycopg2
 import pandas as pd
 import random
 from flask import Flask, jsonify
-# from flask_cors import CORS
+from flask_cors import CORS
 
 
 app = Flask(__name__)
-# CORS(app)
+CORS(app)
 
 # config db
 host = 'ec2-50-19-255-190.compute-1.amazonaws.com'

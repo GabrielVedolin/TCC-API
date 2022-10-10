@@ -268,7 +268,7 @@ def feed(user_id, user_tipo):
         ## Inserindo feed novo
         for indice in conteudosFiltrados_prox.index:
             query = """INSERT INTO shae_db.ultimo_feed (id_feed, id_aprendiz, id_conteudo, consumido)
-                      VALUES({0}, {1}, {2}, false);""".format(1, user_id, conteudosFiltrados_prox["idConteudo"][indice])
+                      VALUES({0}, {1}, {2}, false);""".format(2, user_id, conteudosFiltrados_prox["idConteudo"][indice])
 
             cursor.execute(query)
             conn.commit()
@@ -537,11 +537,11 @@ def feed_adaptado(user_id, user_tipo):
         #
         conteudosFiltrados_prox = pd.concat([conteudosTexto_prox, conteudosVideo_prox, conteudosTeste_prox, conteudosAudio_prox])
         conteudosFiltrados_prox = conteudosFiltrados_prox.sample(frac=1)
-
+        consumo2 = consumo2 + 1
         # Inserindo feed novo
         for indice in conteudosFiltrados_prox.index:
             query = """INSERT INTO shae_db.ultimo_feed (id_feed, id_aprendiz, id_conteudo, consumido)
-                      VALUES({0}, {1}, {2}, false);""".format(1, user_id, conteudosFiltrados_prox["idConteudo"][indice])
+                      VALUES({0}, {1}, {2}, false);""".format(consumo2, user_id, conteudosFiltrados_prox["idConteudo"][indice])
 
             cursor.execute(query)
             conn.commit()

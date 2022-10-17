@@ -21,28 +21,95 @@ ssl = 'require'
 # string conexao
 conn_string = 'host={0} user={1} dbname={2} password={3} sslmode={4}'.format(host, user, dbname, password, ssl)
 
-conn = psycopg2.connect(conn_string)
 
+def conectar():
+    conn = psycopg2.connect(conn_string)
+    return conn
+
+def desconectar(conn):
+    conn.close()
+
+def consulta(query):
+    con = conectar()
+    cursor = con.cursor()
+    cursor.execute(query)
+    lista = cursor.fetchall()
+    desconectar(con)
+    return lista
+
+def consultaFeedProf(user_id, user_tipo):
+    query_prof = 'select * from shae_db.v_obterConteudosPorUsuarioFeed where user_id = {0} and user_tipo = {1}'.format(
+            user_id, user_tipo)
+    conteudosProf = consulta(query_prof)
+    return conteudosProf
+
+def montaDataFrame(query):
+    con = conectar()
+    dtFrame = pd.read_sql(query, con)
+    desconectar(con)
+    return dtFrame
+
+def inserirUltimoFeed(id_feed,user_id,conteudosFiltrados):
+    con = conectar()
+    cursor = con.cursor()
+    for indice in conteudosFiltrados.index:
+            query_insert = """INSERT INTO shae_db.ultimo_feed (id_feed, id_aprendiz, id_conteudo, consumido)
+                                          VALUES({0}, {1}, {2}, false);""".format(id_feed, user_id, conteudosFiltrados["idConteudo"][indice])
+            cursor.execute(query_insert)
+            con.commit()
+    desconectar(con) 
+
+def excluirUltimoFeed():
+    con = conectar()
+    cursor = con.cursor()
+    query_delete_feed = """ DELETE FROM shae_db.ultimo_feed;"""
+    cursor.execute(query_delete_feed)
+    con.commit()
+    desconectar(con)    
+
+def inserirHistoricoFeed(id_feed,user_id,feed_disp_consumido):
+    con = conectar()
+    cursor = con.cursor()
+    for indice in feed_disp_consumido.index:
+            query_insert = """INSERT INTO shae_db.historico_feed(id_aprendiz, id_feed, id_conteudo, consumido, data_criacao)
+                                    VALUES ({0}, {1},{2}, {3}, NOW());""".format(user_id, id_feed,
+                                    feed_disp_consumido["id_conteudos"][indice],
+                                    feed_disp_consumido["consumo"][indice].astype(bool))
+
+            cursor.execute(query_insert)
+            con.commit()
+    desconectar(con)
+
+def obterConteudoFiltradoFeed(qtdTexto,qtdQuestionario,qtdAudio,qtdVideo):
+    query = 'select * from shae_db.v_obterConteudosComProfessores'
+    dfConteudos = montaDataFrame(query)
+    dfConteudos.columns = ["idConteudo", "descricao", "tipo", "ordem", "idTopico", "descricao_texto", "url","id_especialista","nome_especialista","user_tipo","id_feed"]
+    
+    conteudosTexto = dfConteudos.where(dfConteudos.tipo == "texto").dropna(subset=["idConteudo"]).head(qtdTexto)
+    conteudosTeste = dfConteudos.where(dfConteudos.tipo == "questionario").dropna(subset=["idConteudo"]).head(qtdQuestionario)
+    conteudosAudio = dfConteudos.where(dfConteudos.tipo == "imagem").dropna(subset=["idConteudo"]).head(qtdAudio)
+    conteudosVideo = dfConteudos.where(dfConteudos.tipo == "video").dropna(subset=["idConteudo"]).head(qtdVideo)
+
+    ### JSON com a relação de contéudos
+    conteudosFiltrados = pd.concat([conteudosTexto, conteudosVideo, conteudosTeste, conteudosAudio])
+    conteudosFiltrados = conteudosFiltrados.sample(frac=1)
+    
+    return conteudosFiltrados
+
+    
 
 @app.route('/')
 def main():
-    cursor = conn.cursor()
-    cursor.execute('select * from shae_db.conteudo')
-    lista = cursor.fetchall()
+    query ='select * from shae_db.conteudo'
+    lista = consulta(query)
     return jsonify(lista)
     # return '<h1>API Iniciada</h1>'
 
 
 @app.route('/obter_recomendacao/<int:user_id>/<int:user_tipo>')
 def recomendacao(user_id, user_tipo):
-    cursor = conn.cursor()
-
     if user_tipo == 1:
-        query = 'select * from shae_db.v_obterConteudosPorUsuarioFeed where user_id = {0} and user_tipo = {1}'.format(
-            user_id, user_tipo)
-        cursor.execute(query)
-        conteudosProf = cursor.fetchall()
-        return jsonify(conteudosProf)
+        return jsonify(consultaFeedProf(user_id, user_tipo))
     else:
 
     ############################### Motor de Adaptação - 1º Acesso - Questionário #######################
@@ -50,15 +117,15 @@ def recomendacao(user_id, user_tipo):
 
         qt_conteudo_feed = 8
 
-        query_quest = 'select * from ( '
-        query_quest += 'select qp.user_id_aprendiz,qp.tipo_alternativa,sum(qp.peso) as somaDosPesos '
-        query_quest += 'from shae_db.questionario_pedagogico qp '
-        query_quest += 'where id in (1,15,16,17,18,19,20,21,22)'
-        query_quest += 'group by user_id_aprendiz, tipo_alternativa '
-        query_quest += ') as soma_resp_questionario where user_id_aprendiz = {0}'.format(user_id)
+        query_quest = """select * from ( 
+                                select qp.user_id_aprendiz,qp.tipo_alternativa,sum(qp.peso) as somaDosPesos 
+                                from shae_db.questionario_pedagogico qp 
+                                where id in (1,15,16,17,18,19,20,21,22)
+                                group by user_id_aprendiz, tipo_alternativa 
+                         ) as soma_resp_questionario where user_id_aprendiz = {0}""".format(user_id)
 
-        dfquest = pd.read_sql(query_quest, conn)
-
+        dfquest = montaDataFrame(query_quest)
+        
         dfquest.columns = ["user_id_aprendiz", "tipo_alternativa", "peso"]
 
         dfquest['percent_peso'] = dfquest.peso / (dfquest.peso.sum())
@@ -77,18 +144,12 @@ def recomendacao(user_id, user_tipo):
 
         # print(qtdTexto, qtdVideo, qtdAudio, qtdTeste)
 
-
         ########################### Esquema de seleção de conteúdo no banco #################################
         #####################################################################################################
-
         
         conteudosFiltrados = obterConteudoFiltradoFeed(qtdTexto,qtdQuestionario,qtdAudio,qtdVideo)
-
-        for indice in conteudosFiltrados.index:
-            query_insert = """INSERT INTO shae_db.ultimo_feed (id_feed, id_aprendiz, id_conteudo, consumido)
-                    VALUES({0}, {1}, {2}, false);""".format(1, user_id, conteudosFiltrados["idConteudo"][indice])
-            cursor.execute(query_insert)
-            conn.commit()
+        
+        inserirUltimoFeed(1,user_id,conteudosFiltrados)
 
         conteudosFiltrados = obterConteudoFiltradoFeed(qtdTexto,qtdQuestionario,qtdAudio,qtdVideo)
         return conteudosFiltrados.to_json(orient="records", force_ascii=False)
@@ -96,33 +157,10 @@ def recomendacao(user_id, user_tipo):
             # .to_json(orient="records", force_ascii=False)
 
 
-def obterConteudoFiltradoFeed(qtdTexto,qtdQuestionario,qtdAudio,qtdVideo):
-    query = 'select * from shae_db.v_obterConteudosComProfessores'
-    dfConteudos = pd.read_sql(query, conn)
-    dfConteudos.columns = ["idConteudo", "descricao", "tipo", "ordem", "idTopico", "descricao_texto", "url","id_especialista","nome_especialista","user_tipo","id_feed"]
-    
-    conteudosTexto = dfConteudos.where(dfConteudos.tipo == "texto").dropna(subset=["idConteudo"]).head(qtdTexto)
-    conteudosTeste = dfConteudos.where(dfConteudos.tipo == "questionario").dropna(subset=["idConteudo"]).head(qtdQuestionario)
-    conteudosAudio = dfConteudos.where(dfConteudos.tipo == "imagem").dropna(subset=["idConteudo"]).head(qtdAudio)
-    conteudosVideo = dfConteudos.where(dfConteudos.tipo == "video").dropna(subset=["idConteudo"]).head(qtdVideo)
-
-    ### JSON com a relação de contéudos
-    conteudosFiltrados = pd.concat([conteudosTexto, conteudosVideo, conteudosTeste, conteudosAudio])
-    conteudosFiltrados = conteudosFiltrados.sample(frac=1)
-    
-    return conteudosFiltrados
-
-
 @app.route('/obter_feed/<int:user_id>/<int:user_tipo>')
 def feed(user_id, user_tipo):
-    cursor = conn.cursor()
-
     if user_tipo == 1:
-        query = 'select distinct * from shae_db.v_obterConteudosPorUsuarioFeed where user_id = {0} and user_tipo = {1}'.format(
-            user_id, user_tipo)
-        cursor.execute(query)
-        conteudosProf = cursor.fetchall()
-        return jsonify(conteudosProf)
+       return jsonify(consultaFeedProf(user_id, user_tipo))
     else:
 
         qt_conteudo_feed = 8
@@ -135,7 +173,7 @@ def feed(user_id, user_tipo):
                                 left join shae_db.conteudo as cont on cont.id_conteudo = ult.id_conteudo
                                 where id_aprendiz = {0} """.format(user_id)
 
-        df_feed_disp = pd.read_sql(query_feed_disp, conn)
+        df_feed_disp = montaDataFrame(query_feed_disp)
 
         df_feed_disp['consumido'] = df_feed_disp['consumido'].astype(int)
 
@@ -204,7 +242,7 @@ def feed(user_id, user_tipo):
         ################### Esquema de seleção de conteúdo no banco - prox feed - 1 #########################
         #####################################################################################################
 
-        dfConteudos_prox = pd.read_sql(query_prox_conteudo, conn)
+        dfConteudos_prox = montaDataFrame(query_prox_conteudo)
         dfConteudos_prox.columns = ["idConteudo", "descricao", "tipo", "ordem", "idTopico", "descricao_texto", "url","id_especialista","nome_especialista","user_tipo","id_feed"]
 
         ## Setando a quantide de conteúdos por tipo
@@ -250,28 +288,13 @@ def feed(user_id, user_tipo):
 
 
         ## Armazenando na base de histórico - antigo
-        for indice in feed_disp_consumido.index:
-
-            query2 = """INSERT INTO shae_db.historico_feed(id_aprendiz, id_feed, id_conteudo, consumido, data_criacao)
-                                    VALUES ({0}, {1},{2}, {3}, NOW());""".format(user_id, Id_feed,
-                                    feed_disp_consumido["id_conteudos"][indice],
-                                    feed_disp_consumido["consumo"][indice].astype(bool))
-
-            cursor.execute(query2)
-            conn.commit()
+        inserirHistoricoFeed(Id_feed, user_id, feed_disp_consumido)
 
         ## Deletando feed antigo
-        query_delete_feed = """ DELETE FROM shae_db.ultimo_feed;"""
-        cursor.execute(query_delete_feed)
-        conn.commit()
+        excluirUltimoFeed()
 
         ## Inserindo feed novo
-        for indice in conteudosFiltrados_prox.index:
-            query = """INSERT INTO shae_db.ultimo_feed (id_feed, id_aprendiz, id_conteudo, consumido)
-                      VALUES({0}, {1}, {2}, false);""".format(2, user_id, conteudosFiltrados_prox["idConteudo"][indice])
-
-            cursor.execute(query)
-            conn.commit()
+        inserirUltimoFeed(2, user_id, conteudosFiltrados_prox)
 
     return conteudosFiltrados_prox.to_json(orient="records", force_ascii=False)
 
@@ -286,14 +309,8 @@ def feed(user_id, user_tipo):
 
 @app.route('/obter_feed_adaptado/<int:user_id>/<int:user_tipo>')
 def feed_adaptado(user_id, user_tipo):
-    cursor = conn.cursor()
-
     if user_tipo == 1:
-        query = 'select distinct * from shae_db.v_obterConteudosPorUsuarioFeed where user_id = {0} and user_tipo = {1}'.format(
-            user_id, user_tipo)
-        cursor.execute(query)
-        conteudosProf = cursor.fetchall()
-        return jsonify(conteudosProf)
+       return jsonify(consultaFeedProf(user_id, user_tipo))
     else:
 
         qt_conteudo_feed = 8
@@ -306,8 +323,7 @@ def feed_adaptado(user_id, user_tipo):
                                 left join shae_db.conteudo as cont on cont.id_conteudo = ult.id_conteudo
                                 where id_aprendiz = {0} """.format(user_id)
 
-        df_feed_disp = pd.read_sql(query_feed_disp, conn)
-
+        df_feed_disp = montaDataFrame(query_feed_disp) 
         df_feed_disp['consumido'] = df_feed_disp['consumido'].astype(int)
 
         feed_disp_consumido = pd.DataFrame({'id_conteudos': df_feed_disp.id_conteudo,
@@ -316,20 +332,10 @@ def feed_adaptado(user_id, user_tipo):
         Id_feed = df_feed_disp['id_feed'].nunique()
 
         ## Armazenando na base de histórico - novo
-        for indice in feed_disp_consumido.index:
-            query2 = """INSERT INTO shae_db.historico_feed(id_aprendiz, id_feed, id_conteudo, consumido, data_criacao)
-                                    VALUES ({0}, {1},{2}, {3}, NOW());""".format(user_id, Id_feed,
-                                    feed_disp_consumido["id_conteudos"][indice],
-                                    feed_disp_consumido["consumo"][indice].astype(bool))
-            cursor.execute(query2)
-            conn.commit()
-
+        inserirHistoricoFeed(Id_feed,user_id,feed_disp_consumido)
 
         # Deletando feed antigo
-        query_delete_feed = """ DELETE FROM shae_db.ultimo_feed;"""
-        cursor.execute(query_delete_feed)
-        conn.commit()
-
+        excluirUltimoFeed()
         ##Selecionando feed armazenado
         query_feed_disp_arm = """Select hist.id_feed as id_feed, cont.tipo as tipo,
                                     count(hist.id_conteudo) as qt_disp,
@@ -339,7 +345,7 @@ def feed_adaptado(user_id, user_tipo):
                                     where hist.id_aprendiz = {0}
                                     group by hist.id_feed,cont.tipo""".format(user_id)
 
-        df_feed_disp_arm = pd.read_sql(query_feed_disp_arm, conn)
+        df_feed_disp_arm = montaDataFrame(query_feed_disp_arm)
         df_feed_disp_arm['consumido'] = df_feed_disp_arm['consumido'] .astype(int)
 
         #criando index
@@ -467,7 +473,7 @@ def feed_adaptado(user_id, user_tipo):
         left join shae_db.conteudo as cont ON cont.id_conteudo = hist.id_conteudo
         where hist.id_aprendiz = {0}""".format(user_id)
 
-        df_cont_amr = pd.read_sql(query_cont_amr, conn)
+        df_cont_amr = montaDataFrame(query_cont_amr)
         df_cont_amr = pd.DataFrame({'id_feed': df_cont_amr.id_feed,
                                     'tipo':  df_cont_amr.tipo,
                                     'id_conteudo': df_cont_amr.id_conteudo,
@@ -499,7 +505,7 @@ def feed_adaptado(user_id, user_tipo):
         ################### Esquema de seleção de conteúdo no banco - prox feed - 1 #########################
         #####################################################################################################
 
-        dfConteudos_prox = pd.read_sql(query_prox_conteudo, conn)
+        dfConteudos_prox = montaDataFrame(query_prox_conteudo)
         dfConteudos_prox.columns = ["idConteudo", "descricao", "tipo", "ordem", "idTopico", "descricao_texto", "url","id_especialista","nome_especialista","user_tipo","id_feed"]
 
         ## Setando a quantide de conteúdos por tipo
@@ -539,12 +545,7 @@ def feed_adaptado(user_id, user_tipo):
         conteudosFiltrados_prox = conteudosFiltrados_prox.sample(frac=1)
         consumo2 = consumo2 + 1
         # Inserindo feed novo
-        for indice in conteudosFiltrados_prox.index:
-            query = """INSERT INTO shae_db.ultimo_feed (id_feed, id_aprendiz, id_conteudo, consumido)
-                      VALUES({0}, {1}, {2}, false);""".format(consumo2, user_id, conteudosFiltrados_prox["idConteudo"][indice])
-
-            cursor.execute(query)
-            conn.commit()
+        inserirUltimoFeed(consumo2, user_id, conteudosFiltrados_prox)
 
     return conteudosFiltrados_prox.to_json(orient="records", force_ascii=False)
 

@@ -64,8 +64,6 @@ def inserirHistoricoFeed(id_feed,user_id,feed_disp_consumido):
     con = conectar()
     cursor = con.cursor()
     listaConteudoId = feed_disp_consumido[["id_conteudos","consumo"]].values.tolist()
-    print(listaConteudoId[0][1])
-    print(listaConteudoId[1][0])
     args_str = ''
     if(listaConteudoId):
         for i in listaConteudoId:

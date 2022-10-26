@@ -42,12 +42,15 @@ def montaDataFrame(query):
 def inserirUltimoFeed(id_feed,user_id,conteudosFiltrados):
     con = conectar()
     cursor = con.cursor()
-    for indice in conteudosFiltrados.index:
-            query_insert = """INSERT INTO shae_db.ultimo_feed (id_feed, id_aprendiz, id_conteudo, consumido)
-                                          VALUES({0}, {1}, {2}, false);""".format(id_feed, user_id, conteudosFiltrados["idConteudo"][indice])
-            cursor.execute(query_insert)
-            con.commit()
-    desconectar(con) 
+    listaConteudoId = conteudosFiltrados["idConteudo"].values.tolist()
+    args_str = ''
+    if(listaConteudoId):
+        for i in listaConteudoId:
+            args_str += '({0}, {1}, {2}, False),'.format(id_feed, user_id, i)
+        args_str = args_str[:-1]
+        cursor.execute("INSERT INTO shae_db.ultimo_feed VALUES " + args_str) 
+        con.commit()
+        desconectar(con)
 
 def excluirUltimoFeed():
     con = conectar()
@@ -60,15 +63,17 @@ def excluirUltimoFeed():
 def inserirHistoricoFeed(id_feed,user_id,feed_disp_consumido):
     con = conectar()
     cursor = con.cursor()
-    for indice in feed_disp_consumido.index:
-            query_insert = """INSERT INTO shae_db.historico_feed(id_aprendiz, id_feed, id_conteudo, consumido, data_criacao)
-                                    VALUES ({0}, {1},{2}, {3}, NOW());""".format(user_id, id_feed,
-                                    feed_disp_consumido["id_conteudos"][indice],
-                                    feed_disp_consumido["consumo"][indice].astype(bool))
-
-            cursor.execute(query_insert)
-            con.commit()
-    desconectar(con)
+    listaConteudoId = feed_disp_consumido[["id_conteudos","consumo"]].values.tolist()
+    print(listaConteudoId[0][1])
+    print(listaConteudoId[1][0])
+    args_str = ''
+    if(listaConteudoId):
+        for i in listaConteudoId:
+            args_str += '({0}, {1}, {2}, {3}),'.format( user_id, id_feed, i[0], bool(i[1]))
+        args_str = args_str[:-1]        
+        cursor.execute("INSERT INTO shae_db.ultimo_feed VALUES " + args_str) 
+        con.commit()
+        desconectar(con)
 
 def obterConteudoFiltradoFeed(qtdTexto,qtdQuestionario,qtdAudio,qtdVideo):
     query = 'select * from shae_db.v_obterConteudosComProfessores'

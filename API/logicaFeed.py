@@ -14,7 +14,6 @@ def primeiraFase(user_id):
     query_quest = """select * from ( 
                             select qp.user_id_aprendiz,qp.tipo_alternativa,sum(qp.peso) as somaDosPesos 
                             from shae_db.questionario_pedagogico qp 
-                            where id in (1,15,16,17,18,19,20,21,22)
                             group by user_id_aprendiz, tipo_alternativa 
                       ) as soma_resp_questionario where user_id_aprendiz = {0}""".format(user_id)
 
@@ -29,10 +28,10 @@ def primeiraFase(user_id):
     dfquest['prox_feed'] = round(dfquest['prox_feed'])
 
     dfquest['prox_feed'] = dfquest['prox_feed'].astype(int)
-
+    print(dfquest)
     ## Qtd de conteúdos por tipo
     qtdTexto = dfquest['prox_feed'][dfquest['tipo_alternativa'] == "texto"].iloc[0]
-    qtdQuestionario = dfquest['prox_feed'][dfquest['tipo_alternativa'] == "teste"].iloc[0]
+    qtdQuestionario = dfquest['prox_feed'][dfquest['tipo_alternativa'] == "questionario"].iloc[0]
     qtdAudio = dfquest['prox_feed'][dfquest['tipo_alternativa'] == "audio"].iloc[0]
     qtdVideo = dfquest['prox_feed'][dfquest['tipo_alternativa'] == "video"].iloc[0]
 

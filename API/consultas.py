@@ -49,9 +49,9 @@ def inserirHistoricoFeed(id_feed,user_id,feed_disp_consumido):
     args_str = ''
     if(listaConteudoId):
         for i in listaConteudoId:
-            args_str += '({0}, {1}, {2}, {3}, NOW()),'.format( user_id, id_feed, i[0], bool(i[1]))
+            args_str += '({0}, {1}, {2}, {3}),'.format( user_id, id_feed, i[0], bool(i[1]))
         args_str = args_str[:-1]        
-        cursor.execute("INSERT INTO shae_db.historico_feed(id_aprendiz, id_feed, id_conteudo, consumido, data_criacao) VALUES " + args_str) 
+        cursor.execute("INSERT INTO shae_db.ultimo_feed VALUES " + args_str) 
         con.commit()
         cn.desconectar(con)
 
@@ -64,6 +64,7 @@ def obterConteudoFiltradoFeed(qtdTexto,qtdQuestionario,qtdAudio,qtdVideo):
     conteudosTeste = dfConteudos.where(dfConteudos.tipo == "questionario").dropna(subset=["idConteudo"]).head(qtdQuestionario)
     conteudosAudio = dfConteudos.where(dfConteudos.tipo == "imagem").dropna(subset=["idConteudo"]).head(qtdAudio)
     conteudosVideo = dfConteudos.where(dfConteudos.tipo == "video").dropna(subset=["idConteudo"]).head(qtdVideo)
+
     ### JSON com a relação de contéudos
     conteudosFiltrados = pd.concat([conteudosTexto, conteudosVideo, conteudosTeste, conteudosAudio])
     conteudosFiltrados = conteudosFiltrados.sample(frac=1)
